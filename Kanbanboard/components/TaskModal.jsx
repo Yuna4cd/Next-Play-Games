@@ -1,0 +1,111 @@
+export default function TaskModal({
+  isOpen,
+  formData,
+  onChange,
+  onClose,
+  onSubmit,
+  columnTitle,
+}) {
+  if (!isOpen) {
+    return null
+  }
+
+  return (
+    <div className="task-modal" role="dialog" aria-modal="true" aria-labelledby="task-modal-title">
+      <div className="task-modal__backdrop" onClick={onClose} />
+
+      <div className="task-modal__panel">
+        <div className="task-modal__header">
+          <div>
+            <p className="task-modal__eyebrow">New Task</p>
+            <h2 className="task-modal__title" id="task-modal-title">
+              Add task to {columnTitle}
+            </h2>
+          </div>
+
+          <button className="task-modal__close" type="button" onClick={onClose} aria-label="Close task form">
+            x
+          </button>
+        </div>
+
+        <form className="task-modal__form" onSubmit={onSubmit}>
+          <label className="task-modal__field">
+            <span>Title</span>
+            <input
+              autoFocus
+              className="task-modal__input"
+              type="text"
+              name="title"
+              value={formData.title}
+              onChange={onChange}
+              placeholder="Enter task title"
+              required
+            />
+          </label>
+
+          <label className="task-modal__field">
+            <span>Tag</span>
+            <input
+              className="task-modal__input"
+              type="text"
+              name="tag"
+              value={formData.tag}
+              onChange={onChange}
+              placeholder="Frontend, QA, Design..."
+            />
+          </label>
+
+          <div className="task-modal__row">
+            <label className="task-modal__field">
+              <span>Priority</span>
+              <select
+                className="task-modal__input"
+                name="priority"
+                value={formData.priority}
+                onChange={onChange}
+              >
+                <option value="High">High</option>
+                <option value="Medium">Medium</option>
+                <option value="Low">Low</option>
+                <option value="Done">Done</option>
+              </select>
+            </label>
+
+            <label className="task-modal__field">
+              <span>Due date</span>
+              <input
+                className="task-modal__input"
+                type="text"
+                name="dueDate"
+                value={formData.dueDate}
+                onChange={onChange}
+                placeholder="Apr 24"
+              />
+            </label>
+          </div>
+
+          <label className="task-modal__field">
+            <span>Assignee</span>
+            <input
+              className="task-modal__input"
+              type="text"
+              name="assignee"
+              value={formData.assignee}
+              onChange={onChange}
+              placeholder="Who owns this task?"
+            />
+          </label>
+
+          <div className="task-modal__actions">
+            <button className="task-modal__button task-modal__button--ghost" type="button" onClick={onClose}>
+              Cancel
+            </button>
+            <button className="task-modal__button task-modal__button--primary" type="submit">
+              Create Task
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}

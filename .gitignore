@@ -22,3 +22,7 @@ rad.json
 TestResults.xml
 .env
 .venv/
+
+# Added by GitGuard
+node_modules/
+dist/
