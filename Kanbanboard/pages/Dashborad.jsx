@@ -115,6 +115,12 @@ const initialColumns = [
 export default function Dashboard() {
   const [columns, setColumns] = useState(initialColumns)
   const [newColumnTitle, setNewColumnTitle] = useState('')
+  const [searchValue, setSearchValue] = useState('')
+  const [filters, setFilters] = useState({
+    label: '',
+    priority: '',
+    assignee: '',
+  })
   const [taskCounter, setTaskCounter] = useState(
     initialColumns.reduce((count, column) => count + column.tasks.length, 0) + 1,
   )
@@ -363,6 +369,45 @@ export default function Dashboard() {
     }))
   }
 
+  function handleFilterChange(field, value) {
+    setFilters((currentFilters) => ({
+      ...currentFilters,
+      [field]: value,
+    }))
+  }
+
+  function handleClearFilters() {
+    setFilters({
+      label: '',
+      priority: '',
+      assignee: '',
+    })
+  }
+
+  const filterOptions = {
+    labels: [...new Set(columns.flatMap((column) => column.tasks.map((task) => task.label || task.tag).filter(Boolean)))].sort(),
+    priorities: [...new Set(columns.flatMap((column) => column.tasks.map((task) => task.priority).filter(Boolean)))],
+    assignees: [...new Set(columns.flatMap((column) => column.tasks.map((task) => task.assignee).filter(Boolean)))].sort(),
+  }
+
+  const normalizedSearch = searchValue.trim().toLowerCase()
+  const visibleColumns = columns.map((column) => ({
+    ...column,
+    tasks: column.tasks.filter((task) => {
+      const matchesSearch =
+        !normalizedSearch ||
+        [task.title, task.assignee, task.priority, task.label, task.tag]
+          .filter(Boolean)
+          .some((value) => value.toLowerCase().includes(normalizedSearch))
+
+      const matchesLabel = !filters.label || (task.label || task.tag) === filters.label
+      const matchesPriority = !filters.priority || task.priority === filters.priority
+      const matchesAssignee = !filters.assignee || task.assignee === filters.assignee
+
+      return matchesSearch && matchesLabel && matchesPriority && matchesAssignee
+    }),
+  }))
+
   const selectedTask =
     columns
       .find((column) => column.id === taskDetailsState.columnId)
@@ -373,10 +418,16 @@ export default function Dashboard() {
       <Header
         title="Product Sprint Board"
         searchPlaceholder="Search task name, owner, or status"
+        searchValue={searchValue}
+        onSearchChange={setSearchValue}
+        filters={filters}
+        filterOptions={filterOptions}
+        onFilterChange={handleFilterChange}
+        onClearFilters={handleClearFilters}
       />
 
       <div className="board">
-        {columns.map((column) => (
+        {visibleColumns.map((column) => (
           <Column
             key={column.id}
             id={column.id}

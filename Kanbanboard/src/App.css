@@ -112,6 +112,13 @@
   max-width: 28rem;
 }
 
+.header__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+}
+
 .header__eyebrow {
   margin: 0;
   font-size: 0.75rem;
@@ -188,6 +195,7 @@
 
 .header__search {
   position: relative;
+  flex: 1 1 auto;
   width: 100%;
 }
 
@@ -215,6 +223,77 @@
   border-color: rgba(59, 130, 246, 0.7);
   box-shadow: 0 0 0 4px rgba(96, 165, 250, 0.16);
   background: #ffffff;
+}
+
+.header__filters {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.header__filter-button {
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 999px;
+  padding: 0.95rem 1rem;
+  background: rgba(255, 255, 255, 0.92);
+  color: #0f172a;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    background-color 0.2s ease;
+}
+
+.header__filter-button--active,
+.header__filter-button:hover {
+  border-color: rgba(59, 130, 246, 0.45);
+  background: #ffffff;
+}
+
+.header__filter-panel {
+  position: absolute;
+  top: calc(100% + 0.65rem);
+  right: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  width: min(18rem, 80vw);
+  padding: 1rem;
+  border-radius: 1rem;
+  background: #ffffff;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  box-shadow: 0 20px 40px rgba(15, 23, 42, 0.12);
+}
+
+.header__filter-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  color: #334155;
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.header__filter-select {
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 0.85rem;
+  padding: 0.75rem 0.85rem;
+  background: #ffffff;
+  color: #0f172a;
+  font: inherit;
+}
+
+.header__clear-filters {
+  border: 0;
+  border-radius: 0.85rem;
+  padding: 0.8rem 0.95rem;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
 }
 
 .board {
@@ -942,7 +1021,6 @@
     gap: 1.5rem;
   }
 
-  .navbar,
   .header {
     flex-direction: column;
     align-items: stretch;
@@ -953,12 +1031,34 @@
   }
 
   .header__content {
+    flex: none;
+    width: 100%;
     max-width: none;
   }
 
-  .header__title {
-    align-items: flex-start;
+  .header__toolbar {
+    align-items: stretch;
     flex-direction: column;
+  }
+
+  .header__filters {
+    width: 100%;
+  }
+
+  .header__filter-button {
+    width: 100%;
+  }
+
+  .header__filter-panel {
+    left: 0;
+    right: auto;
+    width: 100%;
+  }
+
+  .header__title {
+    align-items: center;
+    flex-direction: row;
+    flex-wrap: wrap;
   }
 
   .header__title-form {
