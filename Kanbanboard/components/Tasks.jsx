@@ -75,7 +75,9 @@ export default function Tasks({
 
       <div className="task-card__row task-card__row--bottom">
         <span>{assignee}</span>
-        {dueDate ? <p className="task-card__date">Due {formatDueDate(dueDate)}</p> : <span />}
+        <p className={`task-card__date${dueDate ? '' : ' task-card__date--empty'}`}>
+          {dueDate ? `Due ${formatDueDate(dueDate)}` : 'Due TBD'}
+        </p>
       </div>
     </article>
   )

@@ -1721,6 +1721,10 @@
   color: #334155;
 }
 
+.task-card__date--empty {
+  color: #64748b;
+}
+
 @keyframes column-drop-settle {
   0% {
     transform: translateY(-3px) scale(1.01);
