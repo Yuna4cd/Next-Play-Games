@@ -199,6 +199,14 @@ export async function updateTask(taskId, updates) {
   return mapRowToTask(data, comments)
 }
 
+export async function deleteTask(taskId) {
+  const { error } = await supabase.from('tasks').delete().eq('id', taskId)
+
+  if (error) {
+    throw error
+  }
+}
+
 export async function insertTaskComment(taskId, message, fallbackAuthor = 'Guest User') {
   const userResult = await supabase.auth.getUser()
 

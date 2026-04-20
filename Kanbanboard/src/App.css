@@ -1008,7 +1008,14 @@
 
 .task-details__actions {
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
+  gap: 1rem;
+  justify-content: space-between;
+}
+
+.task-details__actions--split {
+  justify-content: flex-start;
+  margin-top: 1rem;
 }
 
 .task-details__button {
@@ -1020,6 +1027,91 @@
   font: inherit;
   font-weight: 700;
   cursor: pointer;
+}
+
+.task-details__button--danger {
+  background: linear-gradient(135deg, #dc2626, #991b1b);
+}
+
+.task-details__button--danger:hover {
+  filter: saturate(1.05);
+  box-shadow: 0 12px 24px rgba(220, 38, 38, 0.18);
+}
+
+.confirm-dialog {
+  position: fixed;
+  inset: 0;
+  z-index: 45;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+}
+
+.confirm-dialog__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.48);
+  backdrop-filter: blur(6px);
+}
+
+.confirm-dialog__panel {
+  position: relative;
+  width: min(100%, 28rem);
+  border-radius: 1.4rem;
+  padding: 1.4rem;
+  background: #ffffff;
+  box-shadow: 0 28px 70px rgba(15, 23, 42, 0.24);
+  animation: task-modal-enter 0.22s ease;
+  text-align: left;
+}
+
+.confirm-dialog__eyebrow {
+  margin: 0 0 0.35rem;
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #991b1b;
+}
+
+.confirm-dialog__title {
+  margin: 0;
+  font-size: 1.45rem;
+  color: #0f172a;
+}
+
+.confirm-dialog__message {
+  margin: 0.9rem 0 0;
+  color: #475569;
+  line-height: 1.5;
+}
+
+.confirm-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  margin-top: 1.35rem;
+}
+
+.confirm-dialog__button {
+  border-radius: 0.9rem;
+  padding: 0.85rem 1.1rem;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.confirm-dialog__button--ghost {
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: #ffffff;
+  color: #0f172a;
+}
+
+.confirm-dialog__button--danger {
+  border: 0;
+  background: linear-gradient(135deg, #dc2626, #991b1b);
+  color: #fff7f7;
 }
 
 .task-card {
@@ -1301,6 +1393,10 @@
   }
 
   .task-details {
+    padding: 1rem;
+  }
+
+  .confirm-dialog {
     padding: 1rem;
   }
 

@@ -7,6 +7,7 @@ import {
   fetchTasks,
   insertTask,
   updateTask,
+  deleteTask,
   ensureAnonymousSession,
   insertTaskComment,
 } from '../src/lib/tasksApi'
@@ -144,6 +145,33 @@ function Toast({ tone = 'error', title, message, onDismiss }) {
   )
 }
 
+function ConfirmDialog({ isOpen, title, message, confirmLabel, onConfirm, onCancel }) {
+  if (!isOpen) {
+    return null
+  }
+
+  return (
+    <div className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="confirm-dialog-title">
+      <div className="confirm-dialog__backdrop" onClick={onCancel} />
+      <div className="confirm-dialog__panel">
+        <p className="confirm-dialog__eyebrow">Confirm Action</p>
+        <h2 className="confirm-dialog__title" id="confirm-dialog-title">
+          {title}
+        </h2>
+        <p className="confirm-dialog__message">{message}</p>
+        <div className="confirm-dialog__actions">
+          <button className="confirm-dialog__button confirm-dialog__button--ghost" type="button" onClick={onCancel}>
+            Cancel
+          </button>
+          <button className="confirm-dialog__button confirm-dialog__button--danger" type="button" onClick={onConfirm}>
+            {confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function Dashboard() {
   const [tasks, setTasks] = useState([])
   const [columnDefinitions, setColumnDefinitions] = useState(defaultColumns)
@@ -171,6 +199,11 @@ export default function Dashboard() {
   const [loadError, setLoadError] = useState('')
   const [actionError, setActionError] = useState('')
   const [isSavingTask, setIsSavingTask] = useState(false)
+  const [deleteConfirmState, setDeleteConfirmState] = useState({
+    isOpen: false,
+    taskId: '',
+    taskTitle: '',
+  })
 
   useEffect(() => {
     let isMounted = true
@@ -504,6 +537,52 @@ export default function Dashboard() {
     }
   }
 
+  function handleOpenDeleteConfirm() {
+    if (!selectedTask) {
+      return
+    }
+
+    setDeleteConfirmState({
+      isOpen: true,
+      taskId: selectedTask.id,
+      taskTitle: selectedTask.title,
+    })
+  }
+
+  function handleCloseDeleteConfirm() {
+    setDeleteConfirmState({
+      isOpen: false,
+      taskId: '',
+      taskTitle: '',
+    })
+  }
+
+  async function handleConfirmDeleteTask() {
+    if (!deleteConfirmState.taskId) {
+      handleCloseDeleteConfirm()
+      return
+    }
+
+    const taskId = deleteConfirmState.taskId
+    const previousTasks = tasks
+
+    setActionError('')
+    handleCloseDeleteConfirm()
+    setTasks((currentTasks) => currentTasks.filter((task) => task.id !== taskId))
+    handleCloseTaskDetails()
+
+    if (!hasSupabaseConfig) {
+      return
+    }
+
+    try {
+      await deleteTask(taskId)
+    } catch (error) {
+      setTasks(previousTasks)
+      setActionError(formatAppError(error))
+    }
+  }
+
   function handleFilterChange(field, value) {
     setFilters((currentFilters) => ({
       ...currentFilters,
@@ -598,6 +677,16 @@ export default function Dashboard() {
         onCommentSubmit={handleAddComment}
         onClose={handleCloseTaskDetails}
         onToggleCompleted={handleToggleTaskCompleted}
+        onDeleteTask={handleOpenDeleteConfirm}
+      />
+
+      <ConfirmDialog
+        isOpen={deleteConfirmState.isOpen}
+        title="Delete this task?"
+        message={`This will permanently remove "${deleteConfirmState.taskTitle}" from the board.`}
+        confirmLabel="Delete Task"
+        onConfirm={handleConfirmDeleteTask}
+        onCancel={handleCloseDeleteConfirm}
       />
 
       {(isLoading || loadError || actionError) && (

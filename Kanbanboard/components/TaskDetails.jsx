@@ -39,6 +39,7 @@ export default function TaskDetails({
   onCommentSubmit,
   onClose,
   onToggleCompleted,
+  onDeleteTask,
 }) {
   if (!isOpen || !task) {
     return null
@@ -132,6 +133,10 @@ export default function TaskDetails({
               rows="4"
             />
             <div className="task-details__actions">
+              <button className="task-details__button task-details__button--danger" type="button" onClick={onDeleteTask}>
+                Delete Task
+              </button>
+
               <button className="task-details__button" type="submit">
                 Add Comment
               </button>
