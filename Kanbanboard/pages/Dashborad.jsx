@@ -26,75 +26,6 @@ const defaultColumns = [
   { id: 'done', title: 'Done', tone: 'green' },
 ]
 
-const initialSampleTasks = [
-  {
-    id: 'task-1',
-    title: 'Write onboarding flow copy',
-    status: 'todo',
-    assignee: 'Maya',
-    priority: 'High',
-    dueDate: '2026-04-22',
-    tag: 'Content',
-    completed: false,
-    comments: [],
-  },
-  {
-    id: 'task-2',
-    title: 'Review API error states',
-    status: 'todo',
-    assignee: 'Leo',
-    priority: 'Medium',
-    dueDate: '2026-04-24',
-    tag: 'QA',
-    completed: false,
-    comments: [],
-  },
-  {
-    id: 'task-3',
-    title: 'Build drag and drop interactions',
-    status: 'in_progress',
-    assignee: 'Jordan',
-    priority: 'High',
-    dueDate: '2026-04-20',
-    tag: 'Frontend',
-    completed: false,
-    comments: [],
-  },
-  {
-    id: 'task-4',
-    title: 'Connect board filters to state',
-    status: 'in_progress',
-    assignee: 'Ava',
-    priority: 'Medium',
-    dueDate: '2026-04-21',
-    tag: 'React',
-    completed: false,
-    comments: [],
-  },
-  {
-    id: 'task-5',
-    title: 'Validate responsive spacing on mobile',
-    status: 'in_review',
-    assignee: 'Nina',
-    priority: 'Low',
-    dueDate: '2026-04-23',
-    tag: 'Design',
-    completed: false,
-    comments: [],
-  },
-  {
-    id: 'task-6',
-    title: 'Create reusable header component',
-    status: 'done',
-    assignee: 'Chris',
-    priority: 'Done',
-    dueDate: '2026-04-18',
-    tag: 'UI',
-    completed: true,
-    comments: [],
-  },
-]
-
 function sortTasksByPriority(tasks) {
   return [...tasks].sort((leftTask, rightTask) => {
     const leftPriority = priorityOrder[leftTask.priority] ?? Number.MAX_SAFE_INTEGER
@@ -165,8 +96,56 @@ function mergeColumns(columnDefinitions, tasks) {
   }))
 }
 
+function LoadingColumn({ title, tone = 'default' }) {
+  return (
+    <section className="column-container column-container--loading" aria-busy="true" aria-live="polite">
+      <div className="column-title">
+        <div className="column-title__copy">
+          <p className={`column-title__dot column-title__dot--${tone}`} />
+          <h2>{title}</h2>
+        </div>
+        <span className="column-title__count">...</span>
+      </div>
+
+      <div className="column-tasks">
+        {Array.from({ length: 3 }).map((_, index) => (
+          <div key={`${title}-loading-${index}`} className="task-card task-card--skeleton" aria-hidden="true">
+            <div className="task-card__skeleton task-card__skeleton--tag" />
+            <div className="task-card__skeleton task-card__skeleton--title" />
+            <div className="task-card__skeleton task-card__skeleton--title task-card__skeleton--title-short" />
+            <div className="task-card__skeleton-row">
+              <div className="task-card__skeleton task-card__skeleton--pill" />
+              <div className="task-card__skeleton task-card__skeleton--meta" />
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function Toast({ tone = 'error', title, message, onDismiss }) {
+  if (!message) {
+    return null
+  }
+
+  return (
+    <div className={`toast toast--${tone}`} role="alert" aria-live={tone === 'error' ? 'assertive' : 'polite'}>
+      <div className="toast__content">
+        <p className="toast__eyebrow">{title}</p>
+        <p className="toast__message">{message}</p>
+      </div>
+      {onDismiss ? (
+        <button className="toast__dismiss" type="button" onClick={onDismiss} aria-label={`Dismiss ${tone} message`}>
+          x
+        </button>
+      ) : null}
+    </div>
+  )
+}
+
 export default function Dashboard() {
-  const [tasks, setTasks] = useState(initialSampleTasks)
+  const [tasks, setTasks] = useState([])
   const [columnDefinitions, setColumnDefinitions] = useState(defaultColumns)
   const [newColumnTitle, setNewColumnTitle] = useState('')
   const [searchValue, setSearchValue] = useState('')
@@ -239,6 +218,7 @@ export default function Dashboard() {
   }, [])
 
   const columns = useMemo(() => mergeColumns(columnDefinitions, tasks), [columnDefinitions, tasks])
+  const isInitialLoading = hasSupabaseConfig && isLoading && tasks.length === 0
 
   const filterOptions = useMemo(
     () => ({
@@ -546,14 +526,6 @@ export default function Dashboard() {
           Supabase env variables are missing. The board is running in local demo mode and will not persist after refresh.
         </div>
       ) : null}
-
-      {isLoading ? (
-        <div className="dashboard__notice dashboard__notice--info">Loading your task board from Supabase…</div>
-      ) : null}
-
-      {loadError ? <div className="dashboard__notice dashboard__notice--error">{loadError}</div> : null}
-      {actionError ? <div className="dashboard__notice dashboard__notice--error">{actionError}</div> : null}
-
       <Header
         title="Product Sprint Board"
         searchPlaceholder="Search task name, owner, or status"
@@ -566,37 +538,45 @@ export default function Dashboard() {
       />
 
       <div className="board">
-        {visibleColumns.map((column) => (
-          <Column
-            key={column.id}
-            id={column.id}
-            title={column.title}
-            tasks={column.tasks}
-            tone={column.tone}
-            onMoveTask={handleMoveTask}
-            onAddTask={handleOpenTaskModal}
-            onOpenTask={handleOpenTaskDetails}
-          />
-        ))}
+        {isInitialLoading
+          ? defaultColumns.map((column) => (
+              <LoadingColumn key={column.id} title={column.title} tone={column.tone} />
+            ))
+          : (
+              <>
+                {visibleColumns.map((column) => (
+                  <Column
+                    key={column.id}
+                    id={column.id}
+                    title={column.title}
+                    tasks={column.tasks}
+                    tone={column.tone}
+                    onMoveTask={handleMoveTask}
+                    onAddTask={handleOpenTaskModal}
+                    onOpenTask={handleOpenTaskDetails}
+                  />
+                ))}
 
-        <section className="column-creator">
-          <p className="column-creator__eyebrow">Customize Board</p>
-          <h2 className="column-creator__title">Add a column</h2>
-          <form className="column-creator__form" onSubmit={handleAddColumn}>
-            <input
-              className="column-creator__input"
-              type="text"
-              name="column-title"
-              placeholder="Enter column name"
-              aria-label="Column name"
-              value={newColumnTitle}
-              onChange={(event) => setNewColumnTitle(event.target.value)}
-            />
-            <button className="column-creator__button" type="submit">
-              Add Column
-            </button>
-          </form>
-        </section>
+                <section className="column-creator">
+                  <p className="column-creator__eyebrow">Customize Board</p>
+                  <h2 className="column-creator__title">Add a column</h2>
+                  <form className="column-creator__form" onSubmit={handleAddColumn}>
+                    <input
+                      className="column-creator__input"
+                      type="text"
+                      name="column-title"
+                      placeholder="Enter column name"
+                      aria-label="Column name"
+                      value={newColumnTitle}
+                      onChange={(event) => setNewColumnTitle(event.target.value)}
+                    />
+                    <button className="column-creator__button" type="submit">
+                      Add Column
+                    </button>
+                  </form>
+                </section>
+              </>
+            )}
       </div>
 
       <TaskModal
@@ -619,6 +599,15 @@ export default function Dashboard() {
         onClose={handleCloseTaskDetails}
         onToggleCompleted={handleToggleTaskCompleted}
       />
+
+      {(isLoading || loadError || actionError) && (
+        <div className="toast-stack" aria-live="polite" aria-atomic="true">
+          <Toast tone="info" title="Loading" message={isLoading ? 'Loading your task board from Supabase...' : ''} />
+          <Toast tone="error" title="Error" message={loadError} onDismiss={() => setLoadError('')} />
+          <Toast tone="error" title="Error" message={actionError} onDismiss={() => setActionError('')} />
+        </div>
+      )}
     </main>
   )
 }
+
