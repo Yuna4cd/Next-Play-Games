@@ -2,6 +2,9 @@ export default function TaskModal({
   isOpen,
   formData,
   onChange,
+  onTagChange,
+  onAddTag,
+  onRemoveTag,
   onClose,
   onSubmit,
   columnTitle,
@@ -56,17 +59,37 @@ export default function TaskModal({
             />
           </label>
 
-          <label className="task-modal__field">
-            <span>Tag</span>
-            <input
-              className="task-modal__input"
-              type="text"
-              name="tag"
-              value={formData.tag}
-              onChange={onChange}
-              placeholder="Frontend, QA, Design..."
-            />
-          </label>
+          <div className="task-modal__field">
+            <div className="task-modal__field-head">
+              <span>Tags</span>
+              <button className="task-modal__tag-add" type="button" onClick={onAddTag} aria-label="Add tag">
+                +
+              </button>
+            </div>
+            <div className="task-modal__tag-list">
+              {formData.tags.map((tag, index) => (
+                <div key={`task-tag-${index}`} className="task-modal__tag-row">
+                  <input
+                    className="task-modal__input"
+                    type="text"
+                    value={tag}
+                    onChange={(event) => onTagChange(index, event.target.value)}
+                    placeholder="Frontend, QA, Design..."
+                  />
+                  {formData.tags.length > 1 ? (
+                    <button
+                      className="task-modal__tag-remove"
+                      type="button"
+                      onClick={() => onRemoveTag(index)}
+                      aria-label={`Remove tag ${index + 1}`}
+                    >
+                      x
+                    </button>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          </div>
 
           <div className="task-modal__row">
             <label className="task-modal__field">

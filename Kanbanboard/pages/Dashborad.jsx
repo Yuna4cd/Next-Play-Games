@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import Header from '../components/Header'
 import Column from '../components/Column'
+import ColumnDetail from '../components/ColumnDetail'
 import TaskDetails from '../components/TaskDetails'
 import TaskModal from '../components/TaskModal'
 import {
@@ -10,6 +11,7 @@ import {
   deleteTask,
   ensureAnonymousSession,
   insertTaskComment,
+  insertTaskActivity,
 } from '../src/lib/tasksApi'
 import { hasSupabaseConfig } from '../src/lib/supabase'
 
@@ -55,7 +57,22 @@ function emptyTaskForm() {
     assignee: '',
     priority: 'Medium',
     dueDate: '',
-    tag: '',
+    tags: [''],
+  }
+}
+
+function normalizeTags(tags) {
+  const cleaned = tags.map((tag) => tag.trim()).filter(Boolean)
+  return cleaned.length ? cleaned : ['General']
+}
+
+function createActivityEntry(actionType, actor = 'Maya Chen', metadata = {}) {
+  return {
+    id: `activity-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    actor,
+    actionType,
+    metadata,
+    createdAt: new Date().toISOString(),
   }
 }
 
@@ -193,7 +210,19 @@ export default function Dashboard() {
     columnId: '',
     columnTitle: '',
     taskId: '',
+    isEditing: false,
+    titleDraft: '',
+    tagsDraft: ['General'],
+    priorityDraft: 'Medium',
+    assigneeDraft: '',
     commentDraft: '',
+  })
+  const [columnDetailsState, setColumnDetailsState] = useState({
+    isOpen: false,
+    columnId: '',
+    isEditing: false,
+    titleDraft: '',
+    toneDraft: 'default',
   })
   const [isLoading, setIsLoading] = useState(hasSupabaseConfig)
   const [loadError, setLoadError] = useState('')
@@ -255,12 +284,22 @@ export default function Dashboard() {
 
   const filterOptions = useMemo(
     () => ({
-      labels: [...new Set(tasks.map((task) => task.tag).filter(Boolean))].sort(),
+      labels: [...new Set(tasks.flatMap((task) => task.tags || []).filter(Boolean))].sort(),
       priorities: [...new Set(tasks.map((task) => task.priority).filter(Boolean))],
       assignees: [...new Set(tasks.map((task) => task.assignee).filter(Boolean))].sort(),
     }),
     [tasks],
   )
+
+  const headerStats = useMemo(() => {
+    const completed = tasks.filter((task) => task.completed).length
+
+    return {
+      total: tasks.length,
+      completed,
+      notCompleted: tasks.length - completed,
+    }
+  }, [tasks])
 
   const normalizedSearch = searchValue.trim().toLowerCase()
   const visibleColumns = useMemo(
@@ -268,13 +307,9 @@ export default function Dashboard() {
       columns.map((column) => ({
         ...column,
         tasks: column.tasks.filter((task) => {
-          const matchesSearch =
-            !normalizedSearch ||
-            [task.title, task.assignee, task.priority, task.tag]
-              .filter(Boolean)
-              .some((value) => value.toLowerCase().includes(normalizedSearch))
+          const matchesSearch = !normalizedSearch || task.title.toLowerCase().includes(normalizedSearch)
 
-          const matchesTag = !filters.label || task.tag === filters.label
+          const matchesTag = !filters.label || (task.tags || []).includes(filters.label)
           const matchesPriority = !filters.priority || task.priority === filters.priority
           const matchesAssignee = !filters.assignee || task.assignee === filters.assignee
 
@@ -288,6 +323,35 @@ export default function Dashboard() {
     tasks.find((task) => task.id === taskDetailsState.taskId && task.status === taskDetailsState.columnId) ??
     tasks.find((task) => task.id === taskDetailsState.taskId) ??
     null
+
+  const selectedColumn = columns.find((column) => column.id === columnDetailsState.columnId) ?? null
+
+  useEffect(() => {
+    if (!selectedTask || !taskDetailsState.isOpen) {
+      return
+    }
+
+    setTaskDetailsState((currentState) => {
+      if (
+        currentState.isEditing ||
+        (currentState.titleDraft === selectedTask.title &&
+          JSON.stringify(currentState.tagsDraft) === JSON.stringify(selectedTask.tags || ['General']) &&
+          currentState.priorityDraft === selectedTask.priority &&
+          currentState.assigneeDraft === selectedTask.assignee)
+      ) {
+        return currentState
+      }
+
+      return {
+        ...currentState,
+        isEditing: false,
+        titleDraft: selectedTask.title,
+        tagsDraft: selectedTask.tags || ['General'],
+        priorityDraft: selectedTask.priority,
+        assigneeDraft: selectedTask.assignee,
+      }
+    })
+  }, [selectedTask, taskDetailsState.isOpen])
 
   async function persistTaskUpdate(taskId, updates) {
     if (!hasSupabaseConfig) {
@@ -304,12 +368,30 @@ export default function Dashboard() {
     }
   }
 
+  async function saveTaskActivity(taskId, entry) {
+    if (!hasSupabaseConfig) {
+      return
+    }
+
+    const savedEntry = await insertTaskActivity(taskId, entry.actionType, entry.metadata, entry.actor)
+    updateLocalTask(taskId, (task) => ({
+      ...task,
+      history: [savedEntry, ...(task.history || []).filter((historyEntry) => historyEntry.id !== entry.id)],
+    }))
+  }
+
   async function handleMoveTask(taskId, sourceColumnId, targetColumnId) {
     if (!taskId || !sourceColumnId || !targetColumnId || sourceColumnId === targetColumnId) {
       return
     }
 
     const previousTasks = tasks
+    const sourceColumnTitle = columns.find((column) => column.id === sourceColumnId)?.title || prettifyStatus(sourceColumnId)
+    const targetColumnTitle = columns.find((column) => column.id === targetColumnId)?.title || prettifyStatus(targetColumnId)
+    const activityEntry = createActivityEntry('status_changed', 'Maya Chen', {
+      from: sourceColumnTitle,
+      to: targetColumnTitle,
+    })
 
     setTasks((currentTasks) =>
       currentTasks.map((task) => {
@@ -320,12 +402,14 @@ export default function Dashboard() {
         return {
           ...task,
           status: targetColumnId,
+          history: [activityEntry, ...(task.history || [])],
         }
       }),
     )
 
     try {
       await persistTaskUpdate(taskId, { status: targetColumnId })
+      await saveTaskActivity(taskId, activityEntry)
     } catch {
       setTasks(previousTasks)
     }
@@ -356,6 +440,26 @@ export default function Dashboard() {
     setNewColumnTitle('')
   }
 
+  function handleMoveColumn(sourceColumnId, targetColumnId) {
+    if (!sourceColumnId || !targetColumnId || sourceColumnId === targetColumnId) {
+      return
+    }
+
+    setColumnDefinitions((currentColumns) => {
+      const sourceIndex = currentColumns.findIndex((column) => column.id === sourceColumnId)
+      const targetIndex = currentColumns.findIndex((column) => column.id === targetColumnId)
+
+      if (sourceIndex === -1 || targetIndex === -1) {
+        return currentColumns
+      }
+
+      const nextColumns = [...currentColumns]
+      const [movedColumn] = nextColumns.splice(sourceIndex, 1)
+      nextColumns.splice(targetIndex, 0, movedColumn)
+      return nextColumns
+    })
+  }
+
   function handleOpenTaskModal(columnId) {
     const column = columns.find((item) => item.id === columnId)
 
@@ -369,6 +473,102 @@ export default function Dashboard() {
       columnTitle: column.title,
       formData: emptyTaskForm(),
     })
+  }
+
+  function handleOpenColumnDetails(columnId) {
+    const column = columns.find((item) => item.id === columnId)
+
+    if (!column) {
+      return
+    }
+
+    setColumnDetailsState({
+      isOpen: true,
+      columnId,
+      isEditing: false,
+      titleDraft: column.title,
+      toneDraft: column.tone || 'default',
+    })
+  }
+
+  function handleCloseColumnDetails() {
+    setColumnDetailsState({
+      isOpen: false,
+      columnId: '',
+      isEditing: false,
+      titleDraft: '',
+      toneDraft: 'default',
+    })
+  }
+
+  function handleOpenColumnEdit() {
+    if (!selectedColumn) {
+      return
+    }
+
+    setColumnDetailsState((currentState) => ({
+      ...currentState,
+      isEditing: true,
+      titleDraft: selectedColumn.title,
+      toneDraft: selectedColumn.tone || 'default',
+    }))
+  }
+
+  function handleCancelColumnEdit() {
+    if (!selectedColumn) {
+      return
+    }
+
+    setColumnDetailsState((currentState) => ({
+      ...currentState,
+      isEditing: false,
+      titleDraft: selectedColumn.title,
+      toneDraft: selectedColumn.tone || 'default',
+    }))
+  }
+
+  function handleColumnDetailsFieldChange(event) {
+    const { name, value } = event.target
+
+    setColumnDetailsState((currentState) => ({
+      ...currentState,
+      [name]: value,
+    }))
+  }
+
+  function handleSaveColumnDetails(event) {
+    event.preventDefault()
+
+    if (!selectedColumn) {
+      return
+    }
+
+    const nextTitle = columnDetailsState.titleDraft.trim()
+
+    if (!nextTitle) {
+      setColumnDetailsState((currentState) => ({
+        ...currentState,
+        titleDraft: selectedColumn.title,
+      }))
+      return
+    }
+
+    setColumnDefinitions((currentColumns) =>
+      currentColumns.map((column) =>
+        column.id === selectedColumn.id
+          ? {
+              ...column,
+              title: nextTitle,
+              tone: columnDetailsState.toneDraft,
+            }
+          : column,
+      ),
+    )
+
+    setColumnDetailsState((currentState) => ({
+      ...currentState,
+      isEditing: false,
+    }))
   }
 
   function handleCloseTaskModal() {
@@ -395,6 +595,9 @@ export default function Dashboard() {
     event.preventDefault()
 
     const { columnId, formData } = taskModalState
+    const createdEntry = createActivityEntry('task_created', 'Maya Chen', {
+      title: formData.title.trim(),
+    })
     const newTask = {
       id: `temp-${Date.now()}`,
       title: formData.title.trim(),
@@ -403,9 +606,10 @@ export default function Dashboard() {
       assignee: formData.assignee.trim() || 'Unassigned',
       priority: formData.priority,
       dueDate: formData.dueDate || '',
-      tag: formData.tag.trim() || 'General',
+      tags: normalizeTags(formData.tags),
       completed: false,
       comments: [],
+      history: [createdEntry],
     }
 
     setActionError('')
@@ -414,7 +618,8 @@ export default function Dashboard() {
     if (hasSupabaseConfig) {
       try {
         const savedTask = await insertTask(newTask)
-        setTasks((currentTasks) => [...currentTasks, savedTask])
+        setTasks((currentTasks) => [...currentTasks, { ...savedTask, history: [createdEntry] }])
+        await saveTaskActivity(savedTask.id, createdEntry)
         handleCloseTaskModal()
       } catch (error) {
         setActionError(formatAppError(error))
@@ -439,6 +644,11 @@ export default function Dashboard() {
       columnId,
       columnTitle: column.title,
       taskId,
+      isEditing: false,
+      titleDraft: task.title,
+      tagsDraft: task.tags || ['General'],
+      priorityDraft: task.priority,
+      assigneeDraft: task.assignee,
       commentDraft: '',
     })
   }
@@ -447,6 +657,11 @@ export default function Dashboard() {
     setTaskDetailsState((currentState) => ({
       ...currentState,
       isOpen: false,
+      isEditing: false,
+      titleDraft: '',
+      tagsDraft: ['General'],
+      priorityDraft: 'Medium',
+      assigneeDraft: '',
       commentDraft: '',
     }))
   }
@@ -470,16 +685,213 @@ export default function Dashboard() {
 
     const nextCompleted = !selectedTask.completed
     const previousTasks = tasks
+    const activityEntry = createActivityEntry('completion_changed', 'Maya Chen', {
+      completed: nextCompleted,
+    })
 
     updateLocalTask(selectedTask.id, (task) => ({
       ...task,
       completed: nextCompleted,
+      history: [activityEntry, ...(task.history || [])],
     }))
 
     try {
       await persistTaskUpdate(selectedTask.id, { completed: nextCompleted })
+      await saveTaskActivity(selectedTask.id, activityEntry)
     } catch {
       setTasks(previousTasks)
+    }
+  }
+
+  function handleOpenTaskEdit() {
+    if (!selectedTask) {
+      return
+    }
+
+    setTaskDetailsState((currentState) => ({
+      ...currentState,
+      isEditing: true,
+      titleDraft: selectedTask.title,
+      tagsDraft: selectedTask.tags || ['General'],
+      priorityDraft: selectedTask.priority,
+      assigneeDraft: selectedTask.assignee,
+    }))
+  }
+
+  function handleCancelTaskEdit() {
+    if (!selectedTask) {
+      return
+    }
+
+    setTaskDetailsState((currentState) => ({
+      ...currentState,
+      isEditing: false,
+      titleDraft: selectedTask.title,
+      tagsDraft: selectedTask.tags || ['General'],
+      priorityDraft: selectedTask.priority,
+      assigneeDraft: selectedTask.assignee,
+    }))
+  }
+
+  function handleTaskDetailsFieldChange(event) {
+    const { name, value } = event.target
+
+    setTaskDetailsState((currentState) => ({
+      ...currentState,
+      [name]: value,
+    }))
+  }
+
+  function handleTaskFormTagChange(index, value) {
+    setTaskModalState((currentState) => ({
+      ...currentState,
+      formData: {
+        ...currentState.formData,
+        tags: currentState.formData.tags.map((tag, currentIndex) => (currentIndex === index ? value : tag)),
+      },
+    }))
+  }
+
+  function handleAddTaskFormTag() {
+    setTaskModalState((currentState) => ({
+      ...currentState,
+      formData: {
+        ...currentState.formData,
+        tags: [...currentState.formData.tags, ''],
+      },
+    }))
+  }
+
+  function handleRemoveTaskFormTag(index) {
+    setTaskModalState((currentState) => ({
+      ...currentState,
+      formData: {
+        ...currentState.formData,
+        tags: currentState.formData.tags.filter((_, currentIndex) => currentIndex !== index),
+      },
+    }))
+  }
+
+  function handleTagDraftChange(index, value) {
+    setTaskDetailsState((currentState) => ({
+      ...currentState,
+      tagsDraft: currentState.tagsDraft.map((tag, currentIndex) => (currentIndex === index ? value : tag)),
+    }))
+  }
+
+  function handleAddTagDraft() {
+    setTaskDetailsState((currentState) => ({
+      ...currentState,
+      tagsDraft: [...currentState.tagsDraft, ''],
+    }))
+  }
+
+  function handleRemoveTagDraft(index) {
+    setTaskDetailsState((currentState) => ({
+      ...currentState,
+      tagsDraft: currentState.tagsDraft.filter((_, currentIndex) => currentIndex !== index),
+    }))
+  }
+
+  async function handleSaveTaskDetails(event) {
+    event.preventDefault()
+
+    if (!selectedTask) {
+      return
+    }
+
+    const nextTitle = taskDetailsState.titleDraft.trim()
+    const nextTags = normalizeTags(taskDetailsState.tagsDraft)
+    const nextPriority = taskDetailsState.priorityDraft
+    const nextAssignee = taskDetailsState.assigneeDraft.trim() || 'Unassigned'
+
+    if (!nextTitle) {
+      setTaskDetailsState((currentState) => ({
+        ...currentState,
+        titleDraft: selectedTask.title,
+      }))
+      return
+    }
+
+    const updates = {}
+    const activityEntries = []
+
+    if (nextTitle !== selectedTask.title) {
+      updates.title = nextTitle
+      activityEntries.push(
+        createActivityEntry('title_changed', 'Maya Chen', {
+          from: selectedTask.title,
+          to: nextTitle,
+        }),
+      )
+    }
+
+    if (JSON.stringify(nextTags) !== JSON.stringify(selectedTask.tags || ['General'])) {
+      updates.tags = nextTags
+      activityEntries.push(
+        createActivityEntry('tags_changed', 'Maya Chen', {
+          from: selectedTask.tags || ['General'],
+          to: nextTags,
+        }),
+      )
+    }
+
+    if (nextPriority !== selectedTask.priority) {
+      updates.priority = nextPriority
+      activityEntries.push(
+        createActivityEntry('priority_changed', 'Maya Chen', {
+          from: selectedTask.priority,
+          to: nextPriority,
+        }),
+      )
+    }
+
+    if (nextAssignee !== selectedTask.assignee) {
+      updates.assignee = nextAssignee
+      activityEntries.push(
+        createActivityEntry('assignee_changed', 'Maya Chen', {
+          from: selectedTask.assignee,
+          to: nextAssignee,
+        }),
+      )
+    }
+
+    if (!activityEntries.length) {
+      setTaskDetailsState((currentState) => ({
+        ...currentState,
+        isEditing: false,
+      }))
+      return
+    }
+
+    const previousTasks = tasks
+    const nextHistoryEntries = [...activityEntries].reverse()
+
+    updateLocalTask(selectedTask.id, (task) => ({
+      ...task,
+      ...updates,
+      history: [...nextHistoryEntries, ...(task.history || [])],
+    }))
+
+    try {
+      await persistTaskUpdate(selectedTask.id, updates)
+      for (const activityEntry of activityEntries) {
+        await saveTaskActivity(selectedTask.id, activityEntry)
+      }
+      setTaskDetailsState((currentState) => ({
+        ...currentState,
+        isEditing: false,
+      }))
+    } catch {
+      setTasks(previousTasks)
+      setTaskDetailsState((currentState) => ({
+        ...currentState,
+        isEditing: false,
+        titleDraft: selectedTask.title,
+        tagsDraft: selectedTask.tags || ['General'],
+        priorityDraft: selectedTask.priority,
+        assigneeDraft: selectedTask.assignee,
+      }))
     }
   }
 
@@ -598,6 +1010,40 @@ export default function Dashboard() {
     })
   }
 
+  function renderHistoryEntry(entry) {
+    if (entry.actionType === 'status_changed') {
+      return `Moved From ${entry.metadata.from || 'Unknown'} to ${entry.metadata.to || 'Unknown'}`
+    }
+
+    if (entry.actionType === 'title_changed') {
+      return `Changed Task Name from [${entry.metadata.from || ''}] to [${entry.metadata.to || ''}]`
+    }
+
+    if (entry.actionType === 'tags_changed') {
+      const fromTags = Array.isArray(entry.metadata.from) ? entry.metadata.from.join(', ') : entry.metadata.from || ''
+      const toTags = Array.isArray(entry.metadata.to) ? entry.metadata.to.join(', ') : entry.metadata.to || ''
+      return `Changed Tags from [${fromTags}] to [${toTags}]`
+    }
+
+    if (entry.actionType === 'priority_changed') {
+      return `Changed Priority from [${entry.metadata.from || ''}] to [${entry.metadata.to || ''}]`
+    }
+
+    if (entry.actionType === 'assignee_changed') {
+      return `Changed Assignee from [${entry.metadata.from || ''}] to [${entry.metadata.to || ''}]`
+    }
+
+    if (entry.actionType === 'completion_changed') {
+      return entry.metadata.completed ? 'Marked task as completed' : 'Marked task as incomplete'
+    }
+
+    if (entry.actionType === 'task_created') {
+      return `Created task [${entry.metadata.title || ''}]`
+    }
+
+    return 'Updated task'
+  }
+
   return (
     <main className="dashboard">
       {!hasSupabaseConfig ? (
@@ -607,8 +1053,9 @@ export default function Dashboard() {
       ) : null}
       <Header
         title="Product Sprint Board"
-        searchPlaceholder="Search task name, owner, or status"
+        searchPlaceholder="Search task title"
         searchValue={searchValue}
+        stats={headerStats}
         onSearchChange={setSearchValue}
         filters={filters}
         filterOptions={filterOptions}
@@ -631,8 +1078,10 @@ export default function Dashboard() {
                     tasks={column.tasks}
                     tone={column.tone}
                     onMoveTask={handleMoveTask}
+                    onMoveColumn={handleMoveColumn}
                     onAddTask={handleOpenTaskModal}
                     onOpenTask={handleOpenTaskDetails}
+                    onOpenColumn={handleOpenColumnDetails}
                   />
                 ))}
 
@@ -662,6 +1111,9 @@ export default function Dashboard() {
         isOpen={taskModalState.isOpen}
         formData={taskModalState.formData}
         onChange={handleTaskFormChange}
+        onTagChange={handleTaskFormTagChange}
+        onAddTag={handleAddTaskFormTag}
+        onRemoveTag={handleRemoveTaskFormTag}
         onClose={handleCloseTaskModal}
         onSubmit={handleCreateTask}
         columnTitle={taskModalState.columnTitle}
@@ -673,11 +1125,37 @@ export default function Dashboard() {
         task={selectedTask}
         columnTitle={taskDetailsState.columnTitle}
         commentDraft={taskDetailsState.commentDraft}
+        isEditing={taskDetailsState.isEditing}
+        titleDraft={taskDetailsState.titleDraft}
+        tagsDraft={taskDetailsState.tagsDraft}
+        priorityDraft={taskDetailsState.priorityDraft}
+        assigneeDraft={taskDetailsState.assigneeDraft}
         onCommentChange={handleCommentDraftChange}
         onCommentSubmit={handleAddComment}
+        onDetailsFieldChange={handleTaskDetailsFieldChange}
+        onTagDraftChange={handleTagDraftChange}
+        onAddTagDraft={handleAddTagDraft}
+        onRemoveTagDraft={handleRemoveTagDraft}
+        onEditStart={handleOpenTaskEdit}
+        onEditCancel={handleCancelTaskEdit}
+        onDetailsSubmit={handleSaveTaskDetails}
         onClose={handleCloseTaskDetails}
         onToggleCompleted={handleToggleTaskCompleted}
         onDeleteTask={handleOpenDeleteConfirm}
+        renderHistoryEntry={renderHistoryEntry}
+      />
+
+      <ColumnDetail
+        isOpen={columnDetailsState.isOpen}
+        column={selectedColumn}
+        isEditing={columnDetailsState.isEditing}
+        titleDraft={columnDetailsState.titleDraft}
+        toneDraft={columnDetailsState.toneDraft}
+        onFieldChange={handleColumnDetailsFieldChange}
+        onEditStart={handleOpenColumnEdit}
+        onEditCancel={handleCancelColumnEdit}
+        onSubmit={handleSaveColumnDetails}
+        onClose={handleCloseColumnDetails}
       />
 
       <ConfirmDialog

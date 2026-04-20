@@ -1,5 +1,48 @@
 import { supabase } from './supabase'
 
+function normalizeTags(tags) {
+  const normalized = Array.isArray(tags) ? tags : [tags]
+  const cleaned = normalized
+    .map((tag) => String(tag || '').trim())
+    .filter(Boolean)
+
+  return cleaned.length ? cleaned : ['General']
+}
+
+function parseStoredTags(value) {
+  if (!value) {
+    return ['General']
+  }
+
+  if (Array.isArray(value)) {
+    return normalizeTags(value)
+  }
+
+  if (typeof value === 'string') {
+    const trimmedValue = value.trim()
+
+    if (!trimmedValue) {
+      return ['General']
+    }
+
+    if (trimmedValue.startsWith('[')) {
+      try {
+        return normalizeTags(JSON.parse(trimmedValue))
+      } catch {
+        return normalizeTags(trimmedValue)
+      }
+    }
+
+    return normalizeTags(trimmedValue.split(','))
+  }
+
+  return ['General']
+}
+
+function serializeTags(tags) {
+  return JSON.stringify(normalizeTags(tags))
+}
+
 function mapPriorityFromDb(priority) {
   if (priority === 'high') {
     return 'High'
@@ -41,6 +84,16 @@ function mapCommentRow(row) {
   }
 }
 
+function mapActivityRow(row) {
+  return {
+    id: row.id,
+    actor: row.actor,
+    actionType: row.action_type,
+    metadata: row.metadata || {},
+    createdAt: row.created_at,
+  }
+}
+
 function sortCommentsChronologically(comments) {
   return [...comments].sort((leftComment, rightComment) => {
     const leftTime = new Date(leftComment.createdAt).getTime()
@@ -49,7 +102,17 @@ function sortCommentsChronologically(comments) {
   })
 }
 
-export function mapRowToTask(row, comments = []) {
+function sortActivityChronologically(history) {
+  return [...history].sort((leftEntry, rightEntry) => {
+    const leftTime = new Date(leftEntry.createdAt).getTime()
+    const rightTime = new Date(rightEntry.createdAt).getTime()
+    return rightTime - leftTime
+  })
+}
+
+export function mapRowToTask(row, comments = [], history = []) {
+  const tags = parseStoredTags(row.tag)
+
   return {
     id: row.id,
     title: row.title,
@@ -58,9 +121,11 @@ export function mapRowToTask(row, comments = []) {
     assignee: row.assignee_name || 'Unassigned',
     priority: mapPriorityFromDb(row.priority),
     dueDate: row.due_date || '',
-    tag: row.tag || 'General',
+    tags,
+    tag: tags[0] || 'General',
     completed: row.completed ?? false,
     comments: sortCommentsChronologically(comments.map(mapCommentRow)),
+    history: sortActivityChronologically(history.map(mapActivityRow)),
     createdAt: row.created_at,
   }
 }
@@ -89,9 +154,14 @@ export async function ensureAnonymousSession() {
 }
 
 export async function fetchTasks() {
-  const [{ data: tasks, error: tasksError }, { data: comments, error: commentsError }] = await Promise.all([
+  const [
+    { data: tasks, error: tasksError },
+    { data: comments, error: commentsError },
+    { data: history, error: historyError },
+  ] = await Promise.all([
     supabase.from('tasks').select('*').order('created_at', { ascending: true }),
     supabase.from('task_comments').select('*').order('created_at', { ascending: true }),
+    supabase.from('task_activity').select('*').order('created_at', { ascending: false }),
   ])
 
   if (tasksError) {
@@ -102,13 +172,23 @@ export async function fetchTasks() {
     throw commentsError
   }
 
+  if (historyError) {
+    throw historyError
+  }
+
   const commentsByTaskId = comments.reduce((grouped, comment) => {
     grouped[comment.task_id] ??= []
     grouped[comment.task_id].push(comment)
     return grouped
   }, {})
 
-  return tasks.map((task) => mapRowToTask(task, commentsByTaskId[task.id] ?? []))
+  const historyByTaskId = history.reduce((grouped, activity) => {
+    grouped[activity.task_id] ??= []
+    grouped[activity.task_id].push(activity)
+    return grouped
+  }, {})
+
+  return tasks.map((task) => mapRowToTask(task, commentsByTaskId[task.id] ?? [], historyByTaskId[task.id] ?? []))
 }
 
 export async function insertTask(task) {
@@ -132,7 +212,7 @@ export async function insertTask(task) {
     priority: mapPriorityToDb(task.priority),
     due_date: task.dueDate || null,
     assignee_name: task.assignee || 'Unassigned',
-    tag: task.tag || 'General',
+    tag: serializeTags(task.tags ?? task.tag ?? ['General']),
     completed: task.completed ?? false,
   }
 
@@ -142,7 +222,7 @@ export async function insertTask(task) {
     throw error
   }
 
-  return mapRowToTask(data, [])
+  return mapRowToTask(data, [], [])
 }
 
 export async function updateTask(taskId, updates) {
@@ -173,7 +253,11 @@ export async function updateTask(taskId, updates) {
   }
 
   if (updates.tag !== undefined) {
-    payload.tag = updates.tag
+    payload.tag = serializeTags(updates.tag)
+  }
+
+  if (updates.tags !== undefined) {
+    payload.tag = serializeTags(updates.tags)
   }
 
   if (updates.completed !== undefined) {
@@ -186,17 +270,23 @@ export async function updateTask(taskId, updates) {
     throw error
   }
 
-  const { data: comments, error: commentsError } = await supabase
-    .from('task_comments')
-    .select('*')
-    .eq('task_id', taskId)
-    .order('created_at', { ascending: true })
+  const [
+    { data: comments, error: commentsError },
+    { data: history, error: historyError },
+  ] = await Promise.all([
+    supabase.from('task_comments').select('*').eq('task_id', taskId).order('created_at', { ascending: true }),
+    supabase.from('task_activity').select('*').eq('task_id', taskId).order('created_at', { ascending: false }),
+  ])
 
   if (commentsError) {
     throw commentsError
   }
 
-  return mapRowToTask(data, comments)
+  if (historyError) {
+    throw historyError
+  }
+
+  return mapRowToTask(data, comments, history)
 }
 
 export async function deleteTask(taskId) {
@@ -236,4 +326,36 @@ export async function insertTaskComment(taskId, message, fallbackAuthor = 'Guest
   }
 
   return mapCommentRow(data)
+}
+
+export async function insertTaskActivity(taskId, actionType, metadata = {}, fallbackActor = 'Guest User') {
+  const userResult = await supabase.auth.getUser()
+
+  if (userResult.error) {
+    throw userResult.error
+  }
+
+  const user = userResult.data.user
+
+  if (!user?.id) {
+    throw new Error('No authenticated Supabase user found.')
+  }
+
+  const { data, error } = await supabase
+    .from('task_activity')
+    .insert({
+      task_id: taskId,
+      user_id: user.id,
+      actor: user.user_metadata?.display_name || fallbackActor,
+      action_type: actionType,
+      metadata,
+    })
+    .select()
+    .single()
+
+  if (error) {
+    throw error
+  }
+
+  return mapActivityRow(data)
 }

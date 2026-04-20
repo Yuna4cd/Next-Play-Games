@@ -21,13 +21,14 @@ function formatDueDate(dueDate) {
 export default function Tasks({
   columnId,
   onOpenTask,
+  animationState = 'idle',
   task: {
     id,
     title,
     assignee,
     priority = 'Medium',
     dueDate,
-    tag,
+    tags = [],
     completed,
   },
 }) {
@@ -53,14 +54,18 @@ export default function Tasks({
 
   return (
     <article
-      className={`task-card${isDragging ? ' task-card--dragging' : ''}${completed ? ' task-card--completed' : ''}`}
+      className={`task-card${isDragging ? ' task-card--dragging' : ''}${completed ? ' task-card--completed' : ''}${
+        animationState === 'enter' ? ' task-card--enter' : ''
+      }${animationState === 'exit' ? ' task-card--exit' : ''}`}
       draggable
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
       onClick={handleClick}
     >
       <div className="task-card__row task-card__row--top">
-        {tag ? <span className="task-card__tag">{tag}</span> : <span />}
+        <div className="task-card__tags">
+          {tags.length ? tags.map((tag) => <span key={tag} className="task-card__tag">{tag}</span>) : <span />}
+        </div>
         <span className={priorityClassName}>{priority}</span>
       </div>
 

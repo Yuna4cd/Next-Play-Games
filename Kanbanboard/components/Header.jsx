@@ -2,8 +2,13 @@ import { useState } from 'react'
 
 export default function Header({
   title = 'KbBoard',
-  searchPlaceholder = 'Search tasks, tags, or assignees',
+  searchPlaceholder = 'Search task title',
   searchValue = '',
+  stats = {
+    total: 0,
+    completed: 0,
+    notCompleted: 0,
+  },
   onSearchChange,
   filters = {
     label: '',
@@ -35,7 +40,12 @@ export default function Header({
   return (
     <header className="header">
       <div className="header__title-group">
-        <p className="header__eyebrow">Workspace</p>
+        <div className="header__eyebrow-row">
+          <p className="header__eyebrow">Workspace</p>
+          <p className="header__stats">
+            Totla Tasks : {stats.total} - Completed : {stats.completed} | Not Completed : {stats.notCompleted}
+          </p>
+        </div>
         <div className="header__title">
           {isEditingTitle ? (
             <form className="header__title-form" onSubmit={handleTitleSubmit}>

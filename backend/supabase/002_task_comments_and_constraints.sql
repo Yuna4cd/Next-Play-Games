@@ -55,3 +55,48 @@ on public.task_comments
 for delete
 to authenticated
 using ((select auth.uid()) is not null and (select auth.uid()) = user_id);
+
+create table if not exists public.task_activity (
+  id uuid primary key default gen_random_uuid(),
+  task_id uuid not null references public.tasks (id) on delete cascade,
+  user_id uuid not null references auth.users (id) on delete cascade,
+  actor text not null,
+  action_type text not null,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists task_activity_task_id_idx on public.task_activity (task_id);
+create index if not exists task_activity_user_id_idx on public.task_activity (user_id);
+create index if not exists task_activity_created_at_idx on public.task_activity (created_at desc);
+
+alter table public.task_activity enable row level security;
+
+drop policy if exists "Users can view their own task activity" on public.task_activity;
+create policy "Users can view their own task activity"
+on public.task_activity
+for select
+to authenticated
+using ((select auth.uid()) is not null and (select auth.uid()) = user_id);
+
+drop policy if exists "Users can insert their own task activity" on public.task_activity;
+create policy "Users can insert their own task activity"
+on public.task_activity
+for insert
+to authenticated
+with check ((select auth.uid()) is not null and (select auth.uid()) = user_id);
+
+drop policy if exists "Users can update their own task activity" on public.task_activity;
+create policy "Users can update their own task activity"
+on public.task_activity
+for update
+to authenticated
+using ((select auth.uid()) is not null and (select auth.uid()) = user_id)
+with check ((select auth.uid()) is not null and (select auth.uid()) = user_id);
+
+drop policy if exists "Users can delete their own task activity" on public.task_activity;
+create policy "Users can delete their own task activity"
+on public.task_activity
+for delete
+to authenticated
+using ((select auth.uid()) is not null and (select auth.uid()) = user_id);
