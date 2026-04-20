@@ -1,3 +1,35 @@
+function formatDueDate(dueDate) {
+  if (!dueDate) {
+    return 'TBD'
+  }
+
+  const parsedDate = new Date(dueDate)
+
+  if (Number.isNaN(parsedDate.getTime())) {
+    return dueDate
+  }
+
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+  }).format(parsedDate)
+}
+
+function formatCommentTimestamp(createdAt) {
+  const parsedDate = new Date(createdAt)
+
+  if (Number.isNaN(parsedDate.getTime())) {
+    return createdAt
+  }
+
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(parsedDate)
+}
+
 export default function TaskDetails({
   isOpen,
   task,
@@ -44,9 +76,18 @@ export default function TaskDetails({
           </div>
           <div className="task-details__info">
             <span className="task-details__label">Due date</span>
-            <span>{task.dueDate}</span>
+            <span>{formatDueDate(task.dueDate)}</span>
           </div>
         </div>
+
+        <section className="task-details__section">
+          <div className="task-details__section-head">
+            <h3>Description</h3>
+          </div>
+          <p className="task-details__description">
+            {task.description || 'No description provided for this task yet.'}
+          </p>
+        </section>
 
         <section className="task-details__section">
           <div className="task-details__section-head">
@@ -71,7 +112,7 @@ export default function TaskDetails({
                 <article key={comment.id} className="task-details__comment">
                   <div className="task-details__comment-head">
                     <strong>{comment.author}</strong>
-                    <span>{comment.createdAt}</span>
+                    <span>{formatCommentTimestamp(comment.createdAt)}</span>
                   </div>
                   <p>{comment.message}</p>
                 </article>

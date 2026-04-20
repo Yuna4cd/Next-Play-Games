@@ -1,6 +1,23 @@
 
 import { useState } from 'react'
 
+function formatDueDate(dueDate) {
+  if (!dueDate) {
+    return ''
+  }
+
+  const parsedDate = new Date(dueDate)
+
+  if (Number.isNaN(parsedDate.getTime())) {
+    return dueDate
+  }
+
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+  }).format(parsedDate)
+}
+
 export default function Tasks({
   columnId,
   onOpenTask,
@@ -53,7 +70,7 @@ export default function Tasks({
 
       <div className="task-card__row task-card__row--bottom">
         <span>{assignee}</span>
-        {dueDate ? <p className="task-card__date">Due {dueDate}</p> : <span />}
+        {dueDate ? <p className="task-card__date">Due {formatDueDate(dueDate)}</p> : <span />}
       </div>
     </article>
   )

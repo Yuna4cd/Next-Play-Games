@@ -70,9 +70,13 @@ export default function Column({
       </div>
 
       <div className="column-tasks">
-        {tasks.map((task) => (
-          <Tasks key={task.id} task={task} columnId={id} onOpenTask={onOpenTask} />
-        ))}
+        {tasks.length ? (
+          tasks.map((task) => (
+            <Tasks key={task.id} task={task} columnId={id} onOpenTask={onOpenTask} />
+          ))
+        ) : (
+          <p className="column-empty-state">No tasks in this column.</p>
+        )}
       </div>
 
       <button

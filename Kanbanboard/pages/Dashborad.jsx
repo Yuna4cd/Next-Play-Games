@@ -1,8 +1,16 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Header from '../components/Header'
 import Column from '../components/Column'
 import TaskDetails from '../components/TaskDetails'
 import TaskModal from '../components/TaskModal'
+import {
+  fetchTasks,
+  insertTask,
+  updateTask,
+  ensureAnonymousSession,
+  insertTaskComment,
+} from '../src/lib/tasksApi'
+import { hasSupabaseConfig } from '../src/lib/supabase'
 
 const priorityOrder = {
   High: 0,
@@ -11,13 +19,81 @@ const priorityOrder = {
   Done: 3,
 }
 
-function createTask(task) {
-  return {
-    ...task,
-    completed: task.completed ?? false,
-    comments: task.comments ?? [],
-  }
-}
+const defaultColumns = [
+  { id: 'todo', title: 'To-Do', tone: 'amber' },
+  { id: 'in_progress', title: 'In Progress', tone: 'blue' },
+  { id: 'in_review', title: 'In Review', tone: 'violet' },
+  { id: 'done', title: 'Done', tone: 'green' },
+]
+
+const initialSampleTasks = [
+  {
+    id: 'task-1',
+    title: 'Write onboarding flow copy',
+    status: 'todo',
+    assignee: 'Maya',
+    priority: 'High',
+    dueDate: '2026-04-22',
+    tag: 'Content',
+    completed: false,
+    comments: [],
+  },
+  {
+    id: 'task-2',
+    title: 'Review API error states',
+    status: 'todo',
+    assignee: 'Leo',
+    priority: 'Medium',
+    dueDate: '2026-04-24',
+    tag: 'QA',
+    completed: false,
+    comments: [],
+  },
+  {
+    id: 'task-3',
+    title: 'Build drag and drop interactions',
+    status: 'in_progress',
+    assignee: 'Jordan',
+    priority: 'High',
+    dueDate: '2026-04-20',
+    tag: 'Frontend',
+    completed: false,
+    comments: [],
+  },
+  {
+    id: 'task-4',
+    title: 'Connect board filters to state',
+    status: 'in_progress',
+    assignee: 'Ava',
+    priority: 'Medium',
+    dueDate: '2026-04-21',
+    tag: 'React',
+    completed: false,
+    comments: [],
+  },
+  {
+    id: 'task-5',
+    title: 'Validate responsive spacing on mobile',
+    status: 'in_review',
+    assignee: 'Nina',
+    priority: 'Low',
+    dueDate: '2026-04-23',
+    tag: 'Design',
+    completed: false,
+    comments: [],
+  },
+  {
+    id: 'task-6',
+    title: 'Create reusable header component',
+    status: 'done',
+    assignee: 'Chris',
+    priority: 'Done',
+    dueDate: '2026-04-18',
+    tag: 'UI',
+    completed: true,
+    comments: [],
+  },
+]
 
 function sortTasksByPriority(tasks) {
   return [...tasks].sort((leftTask, rightTask) => {
@@ -32,88 +108,66 @@ function sortTasksByPriority(tasks) {
   })
 }
 
-const initialColumns = [
-  {
-    id: 'todo',
-    title: 'To-Do',
-    tone: 'amber',
-    tasks: [
-      createTask({
-        id: 'task-1',
-        title: 'Write onboarding flow copy',
-        assignee: 'Maya',
-        priority: 'High',
-        dueDate: 'Apr 22',
-        tag: 'Content',
-      }),
-      createTask({
-        id: 'task-2',
-        title: 'Review API error states',
-        assignee: 'Leo',
-        priority: 'Medium',
-        dueDate: 'Apr 24',
-        tag: 'QA',
-      }),
-    ],
-  },
-  {
-    id: 'in-progress',
-    title: 'In Progress',
-    tone: 'blue',
-    tasks: [
-      createTask({
-        id: 'task-3',
-        title: 'Build drag and drop interactions',
-        assignee: 'Jordan',
-        priority: 'High',
-        dueDate: 'Apr 20',
-        tag: 'Frontend',
-      }),
-      createTask({
-        id: 'task-4',
-        title: 'Connect board filters to state',
-        assignee: 'Ava',
-        priority: 'Medium',
-        dueDate: 'Apr 21',
-        tag: 'React',
-      }),
-    ],
-  },
-  {
-    id: 'in-review',
-    title: 'In Review',
-    tone: 'violet',
-    tasks: [
-      createTask({
-        id: 'task-5',
-        title: 'Validate responsive spacing on mobile',
-        assignee: 'Nina',
-        priority: 'Low',
-        dueDate: 'Apr 23',
-        tag: 'Design',
-      }),
-    ],
-  },
-  {
-    id: 'done',
-    title: 'Done',
-    tone: 'green',
-    tasks: [
-      createTask({
-        id: 'task-6',
-        title: 'Create reusable header component',
-        assignee: 'Chris',
-        priority: 'Done',
-        dueDate: 'Apr 18',
-        tag: 'UI',
-        completed: true,
-      }),
-    ],
-  },
-]
+function prettifyStatus(status) {
+  return status
+    .split(/[-_]/)
+    .filter(Boolean)
+    .map((part) => part[0].toUpperCase() + part.slice(1))
+    .join(' ')
+}
+
+function emptyTaskForm() {
+  return {
+    title: '',
+    description: '',
+    assignee: '',
+    priority: 'Medium',
+    dueDate: '',
+    tag: '',
+  }
+}
+
+function formatAppError(error) {
+  const message = error?.message || String(error)
+
+  if (message.toLowerCase().includes('anonymous sign-ins are disabled')) {
+    return 'Supabase anonymous auth is disabled. Enable Anonymous Sign-Ins in Supabase Authentication before using persisted tasks.'
+  }
+
+  if (message.toLowerCase().includes('auth session missing')) {
+    return 'No Supabase session is available. Refresh after enabling anonymous auth or recheck your env configuration.'
+  }
+
+  return message
+}
+
+function mergeColumns(columnDefinitions, tasks) {
+  const statusesFromTasks = tasks
+    .map((task) => task.status)
+    .filter(Boolean)
+    .filter((status, index, statuses) => statuses.indexOf(status) === index)
+
+  const merged = [...columnDefinitions]
+
+  statusesFromTasks.forEach((status) => {
+    if (!merged.some((column) => column.id === status)) {
+      merged.push({
+        id: status,
+        title: prettifyStatus(status),
+        tone: 'default',
+      })
+    }
+  })
+
+  return merged.map((column) => ({
+    ...column,
+    tasks: sortTasksByPriority(tasks.filter((task) => task.status === column.id)),
+  }))
+}
 
 export default function Dashboard() {
-  const [columns, setColumns] = useState(initialColumns)
+  const [tasks, setTasks] = useState(initialSampleTasks)
+  const [columnDefinitions, setColumnDefinitions] = useState(defaultColumns)
   const [newColumnTitle, setNewColumnTitle] = useState('')
   const [searchValue, setSearchValue] = useState('')
   const [filters, setFilters] = useState({
@@ -121,20 +175,11 @@ export default function Dashboard() {
     priority: '',
     assignee: '',
   })
-  const [taskCounter, setTaskCounter] = useState(
-    initialColumns.reduce((count, column) => count + column.tasks.length, 0) + 1,
-  )
   const [taskModalState, setTaskModalState] = useState({
     isOpen: false,
     columnId: '',
     columnTitle: '',
-    formData: {
-      title: '',
-      assignee: '',
-      priority: 'Medium',
-      dueDate: '',
-      tag: '',
-    },
+    formData: emptyTaskForm(),
   })
   const [taskDetailsState, setTaskDetailsState] = useState({
     isOpen: false,
@@ -143,38 +188,134 @@ export default function Dashboard() {
     taskId: '',
     commentDraft: '',
   })
+  const [isLoading, setIsLoading] = useState(hasSupabaseConfig)
+  const [loadError, setLoadError] = useState('')
+  const [actionError, setActionError] = useState('')
+  const [isSavingTask, setIsSavingTask] = useState(false)
 
-  function handleMoveTask(taskId, sourceColumnId, targetColumnId) {
+  useEffect(() => {
+    let isMounted = true
+
+    async function loadTasks() {
+      if (!hasSupabaseConfig) {
+        if (isMounted) {
+          setIsLoading(false)
+        }
+        return
+      }
+
+      try {
+        if (isMounted) {
+          setIsLoading(true)
+          setLoadError('')
+        }
+        await ensureAnonymousSession()
+        const remoteTasks = await fetchTasks()
+
+        if (!isMounted) {
+          return
+        }
+
+        setTasks(remoteTasks)
+        setLoadError('')
+      } catch (error) {
+        if (!isMounted) {
+          return
+        }
+
+        setLoadError(formatAppError(error))
+      } finally {
+        if (isMounted) {
+          setIsLoading(false)
+        }
+      }
+    }
+
+    loadTasks()
+
+    return () => {
+      isMounted = false
+    }
+  }, [])
+
+  const columns = useMemo(() => mergeColumns(columnDefinitions, tasks), [columnDefinitions, tasks])
+
+  const filterOptions = useMemo(
+    () => ({
+      labels: [...new Set(tasks.map((task) => task.tag).filter(Boolean))].sort(),
+      priorities: [...new Set(tasks.map((task) => task.priority).filter(Boolean))],
+      assignees: [...new Set(tasks.map((task) => task.assignee).filter(Boolean))].sort(),
+    }),
+    [tasks],
+  )
+
+  const normalizedSearch = searchValue.trim().toLowerCase()
+  const visibleColumns = useMemo(
+    () =>
+      columns.map((column) => ({
+        ...column,
+        tasks: column.tasks.filter((task) => {
+          const matchesSearch =
+            !normalizedSearch ||
+            [task.title, task.assignee, task.priority, task.tag]
+              .filter(Boolean)
+              .some((value) => value.toLowerCase().includes(normalizedSearch))
+
+          const matchesTag = !filters.label || task.tag === filters.label
+          const matchesPriority = !filters.priority || task.priority === filters.priority
+          const matchesAssignee = !filters.assignee || task.assignee === filters.assignee
+
+          return matchesSearch && matchesTag && matchesPriority && matchesAssignee
+        }),
+      })),
+    [columns, filters, normalizedSearch],
+  )
+
+  const selectedTask =
+    tasks.find((task) => task.id === taskDetailsState.taskId && task.status === taskDetailsState.columnId) ??
+    tasks.find((task) => task.id === taskDetailsState.taskId) ??
+    null
+
+  async function persistTaskUpdate(taskId, updates) {
+    if (!hasSupabaseConfig) {
+      return
+    }
+
+    try {
+      setActionError('')
+      const savedTask = await updateTask(taskId, updates)
+      setTasks((currentTasks) => currentTasks.map((task) => (task.id === taskId ? savedTask : task)))
+    } catch (error) {
+      setActionError(formatAppError(error))
+      throw error
+    }
+  }
+
+  async function handleMoveTask(taskId, sourceColumnId, targetColumnId) {
     if (!taskId || !sourceColumnId || !targetColumnId || sourceColumnId === targetColumnId) {
       return
     }
 
-    setColumns((currentColumns) => {
-      const sourceColumn = currentColumns.find((column) => column.id === sourceColumnId)
-      const taskToMove = sourceColumn?.tasks.find((task) => task.id === taskId)
+    const previousTasks = tasks
 
-      if (!sourceColumn || !taskToMove) {
-        return currentColumns
-      }
-
-      return currentColumns.map((column) => {
-        if (column.id === sourceColumnId) {
-          return {
-            ...column,
-            tasks: sortTasksByPriority(column.tasks.filter((task) => task.id !== taskId)),
-          }
+    setTasks((currentTasks) =>
+      currentTasks.map((task) => {
+        if (task.id !== taskId) {
+          return task
         }
 
-        if (column.id === targetColumnId) {
-          return {
-            ...column,
-            tasks: sortTasksByPriority([...column.tasks, taskToMove]),
-          }
+        return {
+          ...task,
+          status: targetColumnId,
         }
+      }),
+    )
 
-        return column
-      })
-    })
+    try {
+      await persistTaskUpdate(taskId, { status: targetColumnId })
+    } catch {
+      setTasks(previousTasks)
+    }
   }
 
   function handleAddColumn(event) {
@@ -188,16 +329,15 @@ export default function Dashboard() {
 
     const columnId = normalizedTitle
       .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/(^-|-$)/g, '')
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/(^_|_$)/g, '')
 
-    setColumns((currentColumns) => [
+    setColumnDefinitions((currentColumns) => [
       ...currentColumns,
       {
-        id: `${columnId || 'column'}-${currentColumns.length + 1}`,
+        id: `${columnId || 'column'}_${currentColumns.length + 1}`,
         title: normalizedTitle,
         tone: 'default',
-        tasks: [],
       },
     ])
     setNewColumnTitle('')
@@ -214,13 +354,7 @@ export default function Dashboard() {
       isOpen: true,
       columnId,
       columnTitle: column.title,
-      formData: {
-        title: '',
-        assignee: '',
-        priority: 'Medium',
-        dueDate: '',
-        tag: '',
-      },
+      formData: emptyTaskForm(),
     })
   }
 
@@ -228,6 +362,7 @@ export default function Dashboard() {
     setTaskModalState((currentState) => ({
       ...currentState,
       isOpen: false,
+      formData: emptyTaskForm(),
     }))
   }
 
@@ -243,41 +378,44 @@ export default function Dashboard() {
     }))
   }
 
-  function handleCreateTask(event) {
+  async function handleCreateTask(event) {
     event.preventDefault()
 
-    const nextTaskId = `task-${taskCounter}`
     const { columnId, formData } = taskModalState
+    const newTask = {
+      id: `temp-${Date.now()}`,
+      title: formData.title.trim(),
+      description: formData.description.trim(),
+      status: columnId,
+      assignee: formData.assignee.trim() || 'Unassigned',
+      priority: formData.priority,
+      dueDate: formData.dueDate || '',
+      tag: formData.tag.trim() || 'General',
+      completed: false,
+      comments: [],
+    }
 
-    setColumns((currentColumns) =>
-      currentColumns.map((column) => {
-        if (column.id !== columnId) {
-          return column
-        }
+    setActionError('')
+    setIsSavingTask(true)
 
-        return {
-          ...column,
-          tasks: sortTasksByPriority([
-            ...sortTasksByPriority(column.tasks),
-            createTask({
-              id: nextTaskId,
-              title: formData.title.trim(),
-              assignee: formData.assignee.trim() || 'Unassigned',
-              priority: formData.priority,
-              dueDate: formData.dueDate.trim() || 'TBD',
-              tag: formData.tag.trim() || 'New',
-            }),
-          ]),
-        }
-      }),
-    )
-    setTaskCounter((currentCount) => currentCount + 1)
-    handleCloseTaskModal()
+    if (hasSupabaseConfig) {
+      try {
+        const savedTask = await insertTask(newTask)
+        setTasks((currentTasks) => [...currentTasks, savedTask])
+        handleCloseTaskModal()
+      } catch (error) {
+        setActionError(formatAppError(error))
+      }
+    } else {
+      setTasks((currentTasks) => [...currentTasks, newTask])
+      handleCloseTaskModal()
+    }
+    setIsSavingTask(false)
   }
 
   function handleOpenTaskDetails(columnId, taskId) {
     const column = columns.find((item) => item.id === columnId)
-    const task = column?.tasks.find((item) => item.id === taskId)
+    const task = tasks.find((item) => item.id === taskId)
 
     if (!column || !task) {
       return
@@ -300,36 +438,36 @@ export default function Dashboard() {
     }))
   }
 
-  function updateTaskInColumns(columnId, taskId, updater) {
-    setColumns((currentColumns) =>
-      currentColumns.map((column) => {
-        if (column.id !== columnId) {
-          return column
+  function updateLocalTask(taskId, updater) {
+    setTasks((currentTasks) =>
+      currentTasks.map((task) => {
+        if (task.id !== taskId) {
+          return task
         }
 
-        return {
-          ...column,
-          tasks: sortTasksByPriority(
-            column.tasks.map((task) => {
-              if (task.id !== taskId) {
-                return task
-              }
-
-              return updater(task)
-            }),
-          ),
-        }
+        return updater(task)
       }),
     )
   }
 
-  function handleToggleTaskCompleted() {
-    const { columnId, taskId } = taskDetailsState
+  async function handleToggleTaskCompleted() {
+    if (!selectedTask) {
+      return
+    }
 
-    updateTaskInColumns(columnId, taskId, (task) => ({
+    const nextCompleted = !selectedTask.completed
+    const previousTasks = tasks
+
+    updateLocalTask(selectedTask.id, (task) => ({
       ...task,
-      completed: !task.completed,
+      completed: nextCompleted,
     }))
+
+    try {
+      await persistTaskUpdate(selectedTask.id, { completed: nextCompleted })
+    } catch {
+      setTasks(previousTasks)
+    }
   }
 
   function handleCommentDraftChange(event) {
@@ -339,8 +477,12 @@ export default function Dashboard() {
     }))
   }
 
-  function handleAddComment(event) {
+  async function handleAddComment(event) {
     event.preventDefault()
+
+    if (!selectedTask) {
+      return
+    }
 
     const trimmedComment = taskDetailsState.commentDraft.trim()
 
@@ -348,25 +490,38 @@ export default function Dashboard() {
       return
     }
 
-    const { columnId, taskId } = taskDetailsState
+    const nextComments = [
+      ...selectedTask.comments,
+      {
+        id: `comment-${Date.now()}`,
+        author: 'Maya Chen',
+        message: trimmedComment,
+        createdAt: 'Just now',
+      },
+    ]
 
-    updateTaskInColumns(columnId, taskId, (task) => ({
+    const previousTasks = tasks
+    updateLocalTask(selectedTask.id, (task) => ({
       ...task,
-      comments: [
-        ...task.comments,
-        {
-          id: `comment-${Date.now()}`,
-          author: 'Maya Chen',
-          message: trimmedComment,
-          createdAt: 'Just now',
-        },
-      ],
+      comments: nextComments,
     }))
-
     setTaskDetailsState((currentState) => ({
       ...currentState,
       commentDraft: '',
     }))
+
+    if (hasSupabaseConfig) {
+      try {
+        const savedComment = await insertTaskComment(selectedTask.id, trimmedComment, selectedTask.assignee)
+        updateLocalTask(selectedTask.id, (task) => ({
+          ...task,
+          comments: [...task.comments.slice(0, -1), savedComment],
+        }))
+      } catch (error) {
+        setTasks(previousTasks)
+        setActionError(formatAppError(error))
+      }
+    }
   }
 
   function handleFilterChange(field, value) {
@@ -384,37 +539,21 @@ export default function Dashboard() {
     })
   }
 
-  const filterOptions = {
-    labels: [...new Set(columns.flatMap((column) => column.tasks.map((task) => task.label || task.tag).filter(Boolean)))].sort(),
-    priorities: [...new Set(columns.flatMap((column) => column.tasks.map((task) => task.priority).filter(Boolean)))],
-    assignees: [...new Set(columns.flatMap((column) => column.tasks.map((task) => task.assignee).filter(Boolean)))].sort(),
-  }
-
-  const normalizedSearch = searchValue.trim().toLowerCase()
-  const visibleColumns = columns.map((column) => ({
-    ...column,
-    tasks: column.tasks.filter((task) => {
-      const matchesSearch =
-        !normalizedSearch ||
-        [task.title, task.assignee, task.priority, task.label, task.tag]
-          .filter(Boolean)
-          .some((value) => value.toLowerCase().includes(normalizedSearch))
-
-      const matchesLabel = !filters.label || (task.label || task.tag) === filters.label
-      const matchesPriority = !filters.priority || task.priority === filters.priority
-      const matchesAssignee = !filters.assignee || task.assignee === filters.assignee
-
-      return matchesSearch && matchesLabel && matchesPriority && matchesAssignee
-    }),
-  }))
-
-  const selectedTask =
-    columns
-      .find((column) => column.id === taskDetailsState.columnId)
-      ?.tasks.find((task) => task.id === taskDetailsState.taskId) ?? null
-
   return (
     <main className="dashboard">
+      {!hasSupabaseConfig ? (
+        <div className="dashboard__notice dashboard__notice--warning">
+          Supabase env variables are missing. The board is running in local demo mode and will not persist after refresh.
+        </div>
+      ) : null}
+
+      {isLoading ? (
+        <div className="dashboard__notice dashboard__notice--info">Loading your task board from Supabase…</div>
+      ) : null}
+
+      {loadError ? <div className="dashboard__notice dashboard__notice--error">{loadError}</div> : null}
+      {actionError ? <div className="dashboard__notice dashboard__notice--error">{actionError}</div> : null}
+
       <Header
         title="Product Sprint Board"
         searchPlaceholder="Search task name, owner, or status"
@@ -467,6 +606,7 @@ export default function Dashboard() {
         onClose={handleCloseTaskModal}
         onSubmit={handleCreateTask}
         columnTitle={taskModalState.columnTitle}
+        isSaving={isSavingTask}
       />
 
       <TaskDetails

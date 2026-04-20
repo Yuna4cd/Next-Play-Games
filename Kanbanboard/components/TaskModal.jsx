@@ -5,6 +5,7 @@ export default function TaskModal({
   onClose,
   onSubmit,
   columnTitle,
+  isSaving = false,
 }) {
   if (!isOpen) {
     return null
@@ -44,6 +45,18 @@ export default function TaskModal({
           </label>
 
           <label className="task-modal__field">
+            <span>Description</span>
+            <textarea
+              className="task-modal__input task-modal__textarea"
+              name="description"
+              value={formData.description}
+              onChange={onChange}
+              placeholder="Add task context, notes, or acceptance criteria"
+              rows="4"
+            />
+          </label>
+
+          <label className="task-modal__field">
             <span>Tag</span>
             <input
               className="task-modal__input"
@@ -75,11 +88,10 @@ export default function TaskModal({
               <span>Due date</span>
               <input
                 className="task-modal__input"
-                type="text"
+                type="date"
                 name="dueDate"
                 value={formData.dueDate}
                 onChange={onChange}
-                placeholder="Apr 24"
               />
             </label>
           </div>
@@ -97,11 +109,11 @@ export default function TaskModal({
           </label>
 
           <div className="task-modal__actions">
-            <button className="task-modal__button task-modal__button--ghost" type="button" onClick={onClose}>
+            <button className="task-modal__button task-modal__button--ghost" type="button" onClick={onClose} disabled={isSaving}>
               Cancel
             </button>
-            <button className="task-modal__button task-modal__button--primary" type="submit">
-              Create Task
+            <button className="task-modal__button task-modal__button--primary" type="submit" disabled={isSaving}>
+              {isSaving ? 'Creating…' : 'Create Task'}
             </button>
           </div>
         </form>
